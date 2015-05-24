@@ -40,10 +40,10 @@
 
 #define	isvisible(c) \
 	((iswprint(c) &&  \
-	(((c) != (wint_t) '*' && (c) != (wint_t) '?' &&	(c) != (wint_t) '[' && (c) != (wint_t) '#') || (flag & VIS_GLOB) == 0) && \
+	(((flag & VIS_GLOB) == 0) || ((c) != (wint_t) '*' && (c) != (wint_t) '?' && (c) != (wint_t) '[' && (c) != (wint_t) '#')) && \
 	((flag & VIS_SP) == 0 || (c) != (wint_t) ' ') && \
-	((flag & VIS_TAB) == 0 || (c) == (wint_t) '\t') && \
-	((flag & VIS_NL) == 0 || (c) == (wint_t) '\n')) || \
+	((flag & VIS_TAB) == 0 || (c) != (wint_t) '\t') && \
+	((flag & VIS_NL) == 0 || (c) != (wint_t) '\n')) || \
 	((flag & VIS_SAFE) && ((c) == (wint_t) '\a' || (c) == (wint_t) '\b' || (c) == (wint_t) '\r' || (c) == (wint_t) '\n' || (c) == (wint_t) ' ')))
 
 /**
@@ -210,7 +210,7 @@ size_t univis(wint_t c, char **dst, size_t buf_len, int flag)
 		goto done;
 	}
 
-	len = sprintf(tbuf, "\\u%x", (uint32_t) (0xffffff & c));
+	len = snprintf(tbuf, 16, "\\u%x", (uint32_t) (0xffffff & c));
 
 	done:
 		if (len > buf_len)
