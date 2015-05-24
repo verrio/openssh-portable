@@ -46,7 +46,7 @@
 /*
  * to select alternate encoding format
  */
-#define	VIS_OCTAL	0x01	/* use octal \ddd format */
+#define	VIS_OCTAL	0x01	/* use octal \ddd format: property ignored */
 #define	VIS_CSTYLE	0x02	/* use \[nrft0..] where appropriate */
 
 /*
@@ -65,29 +65,7 @@
 #define	VIS_NOSLASH	0x40	/* inhibit printing '\' */
 #define	VIS_GLOB	0x100	/* encode glob(3) magics and '#' */
 
-/*
- * unvis return codes
- */
-#define	UNVIS_VALID	 1	/* character valid */
-#define	UNVIS_VALIDPUSH	 2	/* character valid, push back passed char */
-#define	UNVIS_NOCHAR	 3	/* valid sequence, no character produced */
-#define	UNVIS_SYNBAD	-1	/* unrecognized escape sequence */
-#define	UNVIS_ERROR	-2	/* decoder in unknown state (unrecoverable) */
-
-/*
- * unvis flags
- */
-#define	UNVIS_END	1	/* no more characters */
-
-char	*vis(char *, int, int, int);
-int	strvis(char *, const char *, int);
 int	strnvis(char *, const char *, size_t, int)
-		__attribute__ ((__bounded__(__string__,1,3)));
-int	strvisx(char *, const char *, size_t, int)
-		__attribute__ ((__bounded__(__string__,1,3)));
-int	strunvis(char *, const char *);
-int	unvis(char *, char, int *, int);
-ssize_t strnunvis(char *, const char *, size_t)
 		__attribute__ ((__bounded__(__string__,1,3)));
 
 #endif /* !_VIS_H_ */

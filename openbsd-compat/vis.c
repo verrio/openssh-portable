@@ -33,192 +33,228 @@
 #include "includes.h"
 #if !defined(HAVE_STRNVIS) || defined(BROKEN_STRNVIS)
 
-#include <ctype.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "vis.h"
 
-#define	isoctal(c)	(((u_char)(c)) >= '0' && ((u_char)(c)) <= '7')
-#define	isvisible(c)							\
-	(((u_int)(c) <= UCHAR_MAX && isascii((u_char)(c)) &&		\
-	(((c) != '*' && (c) != '?' && (c) != '[' && (c) != '#') ||	\
-		(flag & VIS_GLOB) == 0) && isgraph((u_char)(c))) ||	\
-	((flag & VIS_SP) == 0 && (c) == ' ') ||				\
-	((flag & VIS_TAB) == 0 && (c) == '\t') ||			\
-	((flag & VIS_NL) == 0 && (c) == '\n') ||			\
-	((flag & VIS_SAFE) && ((c) == '\b' ||				\
-		(c) == '\007' || (c) == '\r' ||				\
-		isgraph((u_char)(c)))))
+#define	isvisible(c) \
+	((iswprint(c) &&  \
+	(((c) != (wint_t) '*' && (c) != (wint_t) '?' &&	(c) != (wint_t) '[' && (c) != (wint_t) '#') || (flag & VIS_GLOB) == 0) && \
+	((flag & VIS_SP) == 0 || (c) != (wint_t) ' ') && \
+	((flag & VIS_TAB) == 0 || (c) == (wint_t) '\t') && \
+	((flag & VIS_NL) == 0 || (c) == (wint_t) '\n')) || \
+	((flag & VIS_SAFE) && ((c) == (wint_t) '\a' || (c) == (wint_t) '\b' || (c) == (wint_t) '\r' || (c) == (wint_t) '\n' || (c) == (wint_t) ' ')))
 
-/*
- * vis - visually encode characters
+/**
+ * fetch next UTF-8 character from buffer
  */
-char *
-vis(char *dst, int c, int flag, int nextc)
+wint_t getUTF8(const char **src)
 {
+	const uint8_t **usrc = src;
+	uint32_t ret;
+	size_t enclen;
+
+	if (**usrc < 0x80) {
+		enclen = 1;
+		ret = **usrc;
+	} else if ((**usrc & 0xe0) == 0xc0) {
+		enclen = 2;
+		ret = **usrc & 0x1f;
+	} else if ((**usrc & 0xf0) == 0xe0) {
+		enclen = 3;
+		ret = **usrc & 0x0f;
+	} else if ((**usrc & 0xf8) == 0xf0) {
+		enclen = 4;
+		ret = **usrc & 0x07;
+	} else {
+		enclen = -1;
+	}
+
+	(*usrc)++;
+	if (enclen < 0)
+		return (wint_t) 0xfffd;
+
+	for (--enclen; enclen > 0; --enclen) {
+		if ((**usrc & 0xc0) != 0x80) {
+			if (**usrc)
+				(*usrc)++;
+			return (wint_t) 0xfffd;
+		}
+		ret = (ret << 6) | (**usrc & 0x3f);
+		(*usrc)++;
+	}
+
+	return (wint_t) ret;
+}
+
+/**
+ * encode unicode point to UTF-8
+ */
+size_t putUTF8(wint_t c, char *dst)
+{
+	if (c < 0x80) {
+		*dst = (char) c;
+		return 1;
+	} else if (c < 0x800) {
+		*dst++ = 0xc0 + (c >> 6);
+		*dst = 0x80 + (c & 0x3f);
+		return 2;
+	} else if (c > 0xdfff && c < 0xe000) {
+		return 0;
+	} else if (c < 0x10000) {
+		*dst++ = 0xe0 + (c >> 12);
+		*dst++ = 0x80 + ((c >> 6) & 0x3f);
+		*dst = 0x80 + (c & 0x3f);
+		return 3;
+	} else if (c < 0x110000) {
+		*dst++ = 0xf0 + (c >> 18);
+		*dst++ = 0x80 + ((c >> 12) & 0x3f);
+		*dst++ = 0x80 + ((c >> 6) & 0x3f);
+		*dst = 0x80 + (c & 0x3f);
+		return 4;
+	}
+	return 0;
+}
+
+/**
+ * filter C0/C1 control characters and other annoying ranges
+ */
+int iswprint(wint_t wc) {
+	/* U+0000–U+001F, U+0080–U+009F */
+	if (wc < 0xff)
+		return ((wc+1) & 0x7f) > 0x20;
+	/* U+200E-U+200F */
+	if (wc < 0x2010)
+		return wc < 0x200e;
+	/* U+2028-U+202E */
+	if (wc < 0x202f)
+		return wc < 0x2028;
+	/* U+D800-U+DFFF*/
+	if (wc < 0xe000)
+		return wc < 0xd800;
+	/* U+FFF9-U+FFFB */
+	if (wc < 0xfffc)
+		return wc < 0xfff9;
+	return wc < 0x10ffff;
+}
+
+/**
+ * univis - visually encode unicode characters
+ */
+size_t univis(wint_t c, char **dst, size_t buf_len, int flag)
+{
+	char tbuf[16];
+	size_t len = 0;
+
 	if (isvisible(c)) {
-		*dst++ = c;
-		if (c == '\\' && (flag & VIS_NOSLASH) == 0)
-			*dst++ = '\\';
-		*dst = '\0';
-		return (dst);
+		len = putUTF8(c, tbuf);
+		if (c == '\\' && (flag & VIS_NOSLASH) == 0) {
+			tbuf[len++] = '\\';
+		}
+		goto done;
 	}
 
 	if (flag & VIS_CSTYLE) {
 		switch(c) {
 		case '\n':
-			*dst++ = '\\';
-			*dst++ = 'n';
+			tbuf[0] = '\\';
+			tbuf[1] = 'n';
+			len = 2;
 			goto done;
 		case '\r':
-			*dst++ = '\\';
-			*dst++ = 'r';
+			tbuf[0] = '\\';
+			tbuf[1] = 'r';
+			len = 2;
 			goto done;
 		case '\b':
-			*dst++ = '\\';
-			*dst++ = 'b';
+			tbuf[0] = '\\';
+			tbuf[1] = 'b';
+			len = 2;
 			goto done;
 		case '\a':
-			*dst++ = '\\';
-			*dst++ = 'a';
+			tbuf[0] = '\\';
+			tbuf[1] = 'a';
+			len = 2;
 			goto done;
 		case '\v':
-			*dst++ = '\\';
-			*dst++ = 'v';
+			tbuf[0] = '\\';
+			tbuf[1] = 'v';
+			len = 2;
 			goto done;
 		case '\t':
-			*dst++ = '\\';
-			*dst++ = 't';
+			tbuf[0] = '\\';
+			tbuf[1] = 't';
+			len = 2;
 			goto done;
 		case '\f':
-			*dst++ = '\\';
-			*dst++ = 'f';
+			tbuf[0] = '\\';
+			tbuf[1] = 'f';
+			len = 2;
 			goto done;
 		case ' ':
-			*dst++ = '\\';
-			*dst++ = 's';
+			tbuf[0] = '\\';
+			tbuf[1] = 's';
+			len = 2;
 			goto done;
 		case '\0':
-			*dst++ = '\\';
-			*dst++ = '0';
-			if (isoctal(nextc)) {
-				*dst++ = '0';
-				*dst++ = '0';
-			}
+			tbuf[0] = '\\';
+			tbuf[1] = '0';
+			len = 2;
 			goto done;
 		}
 	}
-	if (((c & 0177) == ' ') || (flag & VIS_OCTAL) ||
-	    ((flag & VIS_GLOB) && (c == '*' || c == '?' || c == '[' || c == '#'))) {
-		*dst++ = '\\';
-		*dst++ = ((u_char)c >> 6 & 07) + '0';
-		*dst++ = ((u_char)c >> 3 & 07) + '0';
-		*dst++ = ((u_char)c & 07) + '0';
+
+	if (c < 0x20) {
+		len = putUTF8(0x2400 + c, tbuf);
 		goto done;
 	}
-	if ((flag & VIS_NOSLASH) == 0)
-		*dst++ = '\\';
-	if (c & 0200) {
-		c &= 0177;
-		*dst++ = 'M';
-	}
-	if (iscntrl((u_char)c)) {
-		*dst++ = '^';
-		if (c == 0177)
-			*dst++ = '?';
-		else
-			*dst++ = c + '@';
-	} else {
-		*dst++ = '-';
-		*dst++ = c;
-	}
-done:
-	*dst = '\0';
-	return (dst);
+
+	len = sprintf(tbuf, "\\u%x", (uint32_t) (0xffffff & c));
+
+	done:
+		if (len > buf_len)
+			return 0;
+		size_t i;
+		for (i = 0; i < len; i++, (*dst)++)
+			**dst = tbuf[i];
+		return len;
 }
 
-/*
- * strvis, strnvis, strvisx - visually encode characters from src into dst
- *	
- *	Dst must be 4 times the size of src to account for possible
- *	expansion.  The length of dst, not including the trailing NULL,
- *	is returned. 
+/**
+ * visually encode UTF-8 characters from src into dst
  *
- *	Strnvis will write no more than siz-1 bytes (and will NULL terminate).
- *	The number of bytes needed to fully encode the string is returned.
+ * dst must be 4 times the size of src to account for possible
+ * expansion.  The length of dst, not including the trailing NULL,
+ * is returned.
  *
- *	Strvisx encodes exactly len bytes from src into dst.
- *	This is useful for encoding a block of data.
+ * strnvis will write no more than siz-1 bytes (and will NULL terminate).
+ * The number of bytes needed to fully encode the string is returned.
  */
-int
-strvis(char *dst, const char *src, int flag)
+int strnvis(char *dst, const char *src, size_t siz, int flag)
 {
-	char c;
-	char *start;
+	char tbuf[16];
+	char *tbufp = tbuf;
+	char *start = dst;
+	char *end = start + siz - 1;
+	wint_t ucode;
 
-	for (start = dst; (c = *src);)
-		dst = vis(dst, c, flag, *++src);
-	*dst = '\0';
-	return (dst - start);
-}
-
-int
-strnvis(char *dst, const char *src, size_t siz, int flag)
-{
-	char *start, *end;
-	char tbuf[5];
-	int c, i;
-
-	i = 0;
-	for (start = dst, end = start + siz - 1; (c = *src) && dst < end; ) {
-		if (isvisible(c)) {
-			i = 1;
-			*dst++ = c;
-			if (c == '\\' && (flag & VIS_NOSLASH) == 0) {
-				/* need space for the extra '\\' */
-				if (dst < end)
-					*dst++ = '\\';
-				else {
-					dst--;
-					i = 2;
-					break;
-				}
-			}
-			src++;
-		} else {
-			i = vis(tbuf, c, flag, *++src) - tbuf;
-			if (dst + i <= end) {
-				memcpy(dst, tbuf, i);
-				dst += i;
-			} else {
-				src--;
-				break;
-			}
-		}
+	int i;
+	while (*src && dst < end ) {
+		ucode = getUTF8(&src);
+		i = univis(ucode, &dst, end - dst, flag);
+		if (i == 0)
+			break;
 	}
-	if (siz > 0)
+
+	if (dst < end)
 		*dst = '\0';
-	if (dst + i > end) {
-		/* adjust return value for truncation */
-		while ((c = *src))
-			dst += vis(tbuf, c, flag, *++src) - tbuf;
+	/* adjust return value for truncation */
+	while (*src) {
+		ucode = getUTF8(&src);
+		dst += univis(ucode, &tbufp, sizeof(tbuf), flag);
 	}
-	return (dst - start);
-}
 
-int
-strvisx(char *dst, const char *src, size_t len, int flag)
-{
-	char c;
-	char *start;
-
-	for (start = dst; len > 1; len--) {
-		c = *src;
-		dst = vis(dst, c, flag, *++src);
-	}
-	if (len)
-		dst = vis(dst, *src, flag, '\0');
-	*dst = '\0';
 	return (dst - start);
 }
 

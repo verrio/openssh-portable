@@ -460,10 +460,10 @@ assert_char(const char *file, int line, const char *a1, const char *a2,
 
 	TEST_CHECK(aa1, aa2, pred);
 	test_header(file, line, a1, a2, "CHAR", pred);
-	fprintf(stderr, "%12s = '%s' / 0x02%x\n", a1,
-	    vis(buf, aa1, VIS_SAFE|VIS_NL|VIS_TAB|VIS_OCTAL, 0), aa1);
-	fprintf(stderr, "%12s = '%s' / 0x02%x\n", a1,
-	    vis(buf, aa2, VIS_SAFE|VIS_NL|VIS_TAB|VIS_OCTAL, 0), aa2);
+//	fprintf(stderr, "%12s = '%s' / 0x02%x\n", a1,
+//	    vis(buf, aa1, VIS_SAFE|VIS_NL|VIS_TAB|VIS_OCTAL, 0), aa1);
+//	fprintf(stderr, "%12s = '%s' / 0x02%x\n", a1,
+//	    vis(buf, aa2, VIS_SAFE|VIS_NL|VIS_TAB|VIS_OCTAL, 0), aa2);
 	test_die();
 }
 
