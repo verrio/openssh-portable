@@ -253,6 +253,7 @@ int strnvis(char *dst, const char *src, size_t siz, int flag)
 	while (*src) {
 		ucode = getUTF8(&src);
 		dst += univis(ucode, &tbufp, sizeof(tbuf), flag);
+		tbufp = tbuf;
 	}
 
 	return (dst - start);
