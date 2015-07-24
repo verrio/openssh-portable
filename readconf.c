@@ -2372,7 +2372,9 @@ dump_client_config(Options *o, const char *host)
 	if (o->escape_char == SSH_ESCAPECHAR_NONE)
 		printf("escapechar none\n");
 	else {
-		vis(vbuf, o->escape_char, VIS_WHITE, 0);
+		char escape_char[2] = {0};
+		escape_char[0] = o->escape_char;
+		strnvis(vbuf, escape_char, 5, VIS_WHITE);
 		printf("escapechar %s\n", vbuf);
 	}
 
