@@ -140,13 +140,17 @@ else
 fi
 
 AC_ARG_WITH([ssh1],
-	[  --with-ssh1             Enable support for SSH protocol 1],
+	[  --without-ssh1          Enable support for SSH protocol 1],
 	[
 		if test "x$withval" = "xyes" ; then
 			if test "x$openssl" = "xno" ; then
 				AC_MSG_ERROR([Cannot enable SSH protocol 1 with OpenSSL disabled])
 			fi
 			ssh1=yes
+		elif test "x$withval" = "xno" ; then
+			ssh1=no
+		else
+			AC_MSG_ERROR([unknown --with-ssh1 argument])
 		fi
 	]
 )
@@ -777,14 +781,17 @@ main() { if (NSVersionOfRunTimeLibrary("System") >= (60 << 16))
 	i*86-*)
 		seccomp_audit_arch=AUDIT_ARCH_I386
 		;;
-        arm*-*)
+	arm*-*)
 		seccomp_audit_arch=AUDIT_ARCH_ARM
-                ;;
+		;;
+	aarch64*-*)
+		seccomp_audit_arch=AUDIT_ARCH_AARCH64
+		;;
 	esac
 	if test "x$seccomp_audit_arch" != "x" ; then
 		AC_MSG_RESULT(["$seccomp_audit_arch"])
-                AC_DEFINE_UNQUOTED([SECCOMP_AUDIT_ARCH], [$seccomp_audit_arch],
-                    [Specify the system call convention in use])
+		AC_DEFINE_UNQUOTED([SECCOMP_AUDIT_ARCH], [$seccomp_audit_arch],
+		    [Specify the system call convention in use])
 	else
 		AC_MSG_RESULT([architecture not supported])
 	fi
@@ -1667,7 +1674,6 @@ AC_CHECK_FUNCS([ \
 	pstat \
 	readpassphrase \
 	reallocarray \
-	realpath \
 	recvmsg \
 	rresvport_af \
 	sendmsg \
@@ -1881,6 +1887,32 @@ AC_CHECK_FUNCS([setresgid], [
 			[Define if your setresgid() is broken])
 		 AC_MSG_RESULT([not implemented])],
 		[AC_MSG_WARN([cross compiling: not checking setresuid])]
+	)
+])
+
+AC_CHECK_FUNCS([realpath], [
+	dnl the sftp v3 spec says SSH_FXP_REALPATH will "canonicalize any given
+	dnl path name", however some implementations of realpath (and some
+	dnl versions of the POSIX spec) do not work on non-existent files,
+	dnl so we use the OpenBSD implementation on those platforms.
+	AC_MSG_CHECKING([if realpath works with non-existent files])
+	AC_RUN_IFELSE(
+		[AC_LANG_PROGRAM([[
+#include <limits.h>
+#include <stdlib.h>
+#include <errno.h>
+		]], [[
+		char buf[PATH_MAX];
+		if (realpath("/opensshnonexistentfilename1234", buf) == NULL)
+			if (errno == ENOENT)
+				exit(1);
+		exit(0);
+		]])],
+		[AC_MSG_RESULT([yes])],
+		[AC_DEFINE([BROKEN_REALPATH], [1],
+			[realpath does not work with nonexistent files])
+		 AC_MSG_RESULT([no])],
+		[AC_MSG_WARN([cross compiling: assuming working])]
 	)
 ])
 
@@ -4352,7 +4384,7 @@ if test ! -z "$IPADDR_IN_DISPLAY" ; then
 else
 	DISPLAY_HACK_MSG="no"
 	AC_ARG_WITH([ipaddr-display],
-		[  --with-ipaddr-display   Use ip address instead of hostname in \$DISPLAY],
+		[  --with-ipaddr-display   Use ip address instead of hostname in $DISPLAY],
 		[
 			if test "x$withval" != "xno" ; then
 				AC_DEFINE([IPADDR_IN_DISPLAY])
@@ -4398,7 +4430,7 @@ fi
 # Whether to mess with the default path
 SERVER_PATH_MSG="(default)"
 AC_ARG_WITH([default-path],
-	[  --with-default-path=    Specify default \$PATH environment for server],
+	[  --with-default-path=    Specify default $PATH environment for server],
 	[
 		if test "x$external_path_file" = "x/etc/login.conf" ; then
 			AC_MSG_WARN([
